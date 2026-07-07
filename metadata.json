@@ -1,0 +1,6 @@
+{
+  "name": "학급 종합 관리 프로그램",
+  "description": "선생님과 학생을 위한 학급 통합 관리 플랫폼. 급식표, 시간표, 공지사항, D-Day, 그리고 열품타 스타일의 공부 시간 공유 및 랭킹 시스템을 제공합니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

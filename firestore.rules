@@ -1,0 +1,135 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Security Default Net: DENY ALL
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Dynamic Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isClassMember(uid, classId) {
+      let u = getUserData(uid);
+      return u.grade + "-" + u.classNumber == classId;
+    }
+
+    function getRole(uid) {
+      return getUserData(uid).role;
+    }
+
+    function getAssignedRole(uid) {
+      return getUserData(uid).assignedRole;
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && (
+        request.auth.uid == userId ||
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher'
+      );
+      allow delete: if isSignedIn() && getRole(request.auth.uid) == 'admin';
+    }
+
+    // 2. Classes collection
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher'
+      );
+    }
+
+    // 3. Meals collection
+    match /meals/{mealId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher'
+      );
+    }
+
+    // 4. Timetables collection
+    match /timetables/{timetableId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher'
+      );
+    }
+
+    // 5. D-Days collection
+    match /ddays/{ddayId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher' ||
+        getAssignedRole(request.auth.uid) == '서기'
+      );
+    }
+
+    // 6. Notices collection
+    match /notices/{noticeId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && (
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher' ||
+        (getAssignedRole(request.auth.uid) == '서기' && request.resource.data.type == 'class')
+      );
+      allow delete: if isSignedIn() && (
+        getRole(request.auth.uid) == 'admin' ||
+        getRole(request.auth.uid) == 'teacher' ||
+        getAssignedRole(request.auth.uid) == '서기'
+      );
+    }
+
+    // 7. Posts collection (Class Boards)
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.authorUid == request.auth.uid ||
+        getRole(request.auth.uid) == 'teacher' ||
+        getAssignedRole(request.auth.uid) == '서기' ||
+        // Allow liking
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy', 'views'])
+      );
+      allow delete: if isSignedIn() && (
+        resource.data.authorUid == request.auth.uid ||
+        getRole(request.auth.uid) == 'teacher' ||
+        getAssignedRole(request.auth.uid) == '서기'
+      );
+    }
+
+    // 8. Comments collection
+    match /comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        resource.data.authorUid == request.auth.uid ||
+        getRole(request.auth.uid) == 'teacher' ||
+        getAssignedRole(request.auth.uid) == '서기'
+      );
+    }
+
+    // 9. Study Logs collection
+    match /studyLogs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.studentUid == request.auth.uid;
+      allow update, delete: if isSignedIn() && (
+        resource.data.studentUid == request.auth.uid ||
+        getRole(request.auth.uid) == 'teacher'
+      );
+    }
+
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "teacher", "student"] },
+        "grade": { "type": "integer" },
+        "classNumber": { "type": "integer" },
+        "studentNumber": { "type": "integer" },
+        "assignedRole": { "type": "string" }
+      },
+      "required": ["uid", "email", "name", "role"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "Class directory metadata.",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "string" },
+        "grade": { "type": "integer" },
+        "classNumber": { "type": "integer" },
+        "teacherUid": { "type": "string" },
+        "teacherName": { "type": "string" }
+      },
+      "required": ["classId", "grade", "classNumber"]
+    },
+    "Meal": {
+      "title": "Meal",
+      "description": "Lunch meal menus for a class.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "menu": { "type": "string" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["id", "classId", "date", "menu"]
+    },
+    "Timetable": {
+      "title": "Timetable",
+      "description": "Class subject timetables for weekdays.",
+      "type": "object",
+      "properties": {
+        "classId": { "type": "string" },
+        "monday": { "type": "array" },
+        "tuesday": { "type": "array" },
+        "wednesday": { "type": "array" },
+        "thursday": { "type": "array" },
+        "friday": { "type": "array" }
+      },
+      "required": ["classId"]
+    },
+    "DDay": {
+      "title": "D-Day",
+      "description": "Academic countdown milestone deadlines.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "title": { "type": "string" },
+        "targetDate": { "type": "string", "format": "date" },
+        "pinned": { "type": "boolean" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "classId", "title", "targetDate"]
+    },
+    "Notice": {
+      "title": "Notice",
+      "description": "School-wide or class-specific notice items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["all", "class"] },
+        "classId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "imageUrl": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdByName": { "type": "string" }
+      },
+      "required": ["type", "title", "content"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Bulletin board thread post written by a class member.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "category": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "views": { "type": "integer" },
+        "likes": { "type": "integer" },
+        "likedBy": { "type": "array" },
+        "hidden": { "type": "boolean" }
+      },
+      "required": ["classId", "category", "title", "content", "authorUid", "authorName"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Nested comment inside a bulletin board post.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "classId": { "type": "string" },
+        "content": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" }
+      },
+      "required": ["postId", "classId", "content", "authorUid", "authorName"]
+    },
+    "StudyLog": {
+      "title": "StudyLog",
+      "description": "Study duration log entries recorded via the stopwatch timer.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "studentUid": { "type": "string" },
+        "studentName": { "type": "string" },
+        "subject": { "type": "string" },
+        "memo": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "durationMinutes": { "type": "integer" }
+      },
+      "required": ["classId", "studentUid", "studentName", "subject", "durationMinutes"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Individual student, teacher, or admin profile document."
+    },
+    "/classes/{classId}": {
+      "schema": "Class",
+      "description": "High school class profile database doc."
+    },
+    "/meals/{mealId}": {
+      "schema": "Meal",
+      "description": "Registered lunch menu for a grade / class partition."
+    },
+    "/timetables/{timetableId}": {
+      "schema": "Timetable",
+      "description": "Weekday timetable grid profile."
+    },
+    "/ddays/{ddayId}": {
+      "schema": "DDay",
+      "description": "Target exam date or school-wide milestone countdown."
+    },
+    "/notices/{noticeId}": {
+      "schema": "Notice",
+      "description": "Bulletin notice item for all students or single class."
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Open forum threads on class board."
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Class board comment stream."
+    },
+    "/studyLogs/{logId}": {
+      "schema": "StudyLog",
+      "description": "Individual stopwatch logged record."
+    }
+  }
+}
