@@ -2,6 +2,7 @@
  * Firebase Initialization & Dual-Mode Persistence Layer (Real Firebase & LocalStorage Fallback)
  */
 import { showToast, generateId } from './utils.js';
+import firebaseConfig from '../firebase-applet-config.json';
 
 // Default Firebase Config Placeholder (Can be configured dynamically from the UI)
 const DEFAULT_CONFIG_KEY = 'class_management_firebase_config';
@@ -15,6 +16,9 @@ let firebaseStorage = null;
 
 // Try to load configured credentials from localStorage
 export function getSavedFirebaseConfig() {
+  if (firebaseConfig && firebaseConfig.projectId && firebaseConfig.apiKey) {
+    return firebaseConfig;
+  }
   try {
     const saved = localStorage.getItem(DEFAULT_CONFIG_KEY);
     return saved ? JSON.parse(saved) : null;
