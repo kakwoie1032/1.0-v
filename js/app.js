@@ -1,6 +1,7 @@
 /**
  * Main Application Coordinator & Session Orchestrator
  */
+import '../css/style.css';
 import { initializeFirebase, authService, isUsingRealFirebase, saveFirebaseConfig, clearFirebaseConfig, getSavedFirebaseConfig } from './firebase.js';
 import { renderAdminDashboard } from './admin.js';
 import { renderTeacherDashboard } from './teacher.js';
