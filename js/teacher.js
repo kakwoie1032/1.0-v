@@ -2,7 +2,7 @@
  * Teacher Dashboard Controller
  */
 import { dbService, authService, storageService } from './firebase.js';
-import { showToast, formatDate, formatMinutes } from './utils.js';
+import { showToast, formatDate, formatMinutes, showConfirm } from './utils.js';
 
 export async function renderTeacherDashboard(container, currentUser) {
   const grade = currentUser.grade;
@@ -92,7 +92,7 @@ export async function renderTeacherDashboard(container, currentUser) {
             📅 시간표 편성
           </button>
           <button class="teacher-tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-3 px-1 text-sm font-semibold transition-colors duration-200" data-tab="board">
-            🛡️ 학급 소통방 검열
+            💬 학급 소통방 참여 및 검열
           </button>
           <button class="teacher-tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-3 px-1 text-sm font-semibold transition-colors duration-200" data-tab="study">
             ⏱️ 공부 기록 조정
@@ -161,7 +161,46 @@ export async function renderTeacherDashboard(container, currentUser) {
     } else if (tabName === 'timetable') {
       await renderTimetablePanel(panel, classId);
     } else if (tabName === 'board') {
-      await renderBoardPanel(panel, classId);
+      panel.innerHTML = `
+        <div class="space-y-6 animate-fade-in">
+          <div class="flex items-center gap-3 border-b border-gray-150 pb-3 flex-wrap">
+            <button id="teacher-board-subtab-view" class="text-xs font-bold px-4 py-2 rounded-xl transition-all border bg-emerald-600 border-emerald-600 text-white cursor-pointer shadow-sm">
+              💬 게시판 소통 참여
+            </button>
+            <button id="teacher-board-subtab-mod" class="text-xs font-bold px-4 py-2 rounded-xl transition-all border bg-white border-gray-200 hover:border-gray-300 text-gray-500 cursor-pointer">
+              🛡️ 소통 게시글 및 댓글 검열
+            </button>
+          </div>
+          <div id="teacher-board-subpanel" class="min-h-[300px]">
+            <!-- Dynamic Subpanel -->
+          </div>
+        </div>
+      `;
+
+      const subPanel = document.getElementById('teacher-board-subpanel');
+      const viewBtn = document.getElementById('teacher-board-subtab-view');
+      const modBtn = document.getElementById('teacher-board-subtab-mod');
+
+      const { renderClassBoard } = await import('./board.js');
+
+      const showViewBoard = async () => {
+        viewBtn.className = "text-xs font-bold px-4 py-2 rounded-xl transition-all border bg-emerald-600 border-emerald-600 text-white cursor-pointer shadow-sm";
+        modBtn.className = "text-xs font-bold px-4 py-2 rounded-xl transition-all border bg-white border-gray-200 hover:border-gray-300 text-gray-500 cursor-pointer";
+        subPanel.innerHTML = `<div class="flex justify-center items-center py-20"><svg class="animate-spin h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>`;
+        await renderClassBoard(subPanel, classId, currentUser);
+      };
+
+      const showModBoard = async () => {
+        viewBtn.className = "text-xs font-bold px-4 py-2 rounded-xl transition-all border bg-white border-gray-200 hover:border-gray-300 text-gray-500 cursor-pointer";
+        modBtn.className = "text-xs font-bold px-4 py-2 rounded-xl transition-all border bg-red-600 border-red-600 text-white cursor-pointer shadow-sm";
+        subPanel.innerHTML = `<div class="flex justify-center items-center py-20"><svg class="animate-spin h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>`;
+        await renderBoardPanel(subPanel, classId);
+      };
+
+      viewBtn.addEventListener('click', showViewBoard);
+      modBtn.addEventListener('click', showModBoard);
+
+      await showViewBoard();
     } else if (tabName === 'study') {
       await renderStudyPanel(panel, classId);
     }
@@ -355,7 +394,7 @@ export async function renderStudentsPanel(panel, grade, classNumber) {
   panel.querySelectorAll('.remove-student-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const uid = btn.getAttribute('data-uid');
-      if (confirm('정말 이 학생을 우리 반 목록에서 제외하시겠습니까? 계정이 삭제됩니다.')) {
+      if (await showConfirm('정말 이 학생을 우리 반 목록에서 제외하시겠습니까? 계정이 삭제됩니다.')) {
         await dbService.deleteDocument('users', uid);
         showToast("학생 데이터가 정상적으로 소거되었습니다.", "success");
         renderStudentsPanel(panel, grade, classNumber);
@@ -516,7 +555,7 @@ export async function renderRolesPanel(panel, classId) {
       const roleId = btn.getAttribute('data-role-id');
       const role = roles.find(r => r.id === roleId);
 
-      if (confirm(`'${role.roleName}' 역할을 영구 소거하시겠습니까?`)) {
+      if (await showConfirm(`'${role.roleName}' 역할을 영구 소거하시겠습니까?`)) {
         if (role.assignedStudentUid) {
           await dbService.updateDocument('users', role.assignedStudentUid, {
             assignedRole: ''
@@ -645,7 +684,7 @@ async function renderMealPanel(panel, classId) {
   panel.querySelectorAll('.delete-meal-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const mealId = btn.getAttribute('data-id');
-      if (confirm('이 급식 식단을 삭제하시겠습니까?')) {
+      if (await showConfirm('이 급식 식단을 삭제하시겠습니까?')) {
         await dbService.deleteDocument('meals', mealId);
         showToast("식단이 삭제되었습니다.", "success");
         renderMealPanel(panel, classId);
@@ -655,7 +694,7 @@ async function renderMealPanel(panel, classId) {
 }
 
 // PANEL 4: Timetable Customizer
-async function renderTimetablePanel(panel, classId) {
+export async function renderTimetablePanel(panel, classId) {
   const timetables = await dbService.getCollectionWithFilter('timetables', 'classId', classId);
   const hasTimetable = timetables.length > 0;
   const tData = hasTimetable ? timetables[0] : {
@@ -822,7 +861,7 @@ export async function renderBoardPanel(panel, classId) {
   panel.querySelectorAll('.delete-post-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const pId = btn.getAttribute('data-id');
-      if (confirm('이 게시글을 정말 지우시겠습니까? 삭제 복구가 불가능합니다.')) {
+      if (await showConfirm('이 게시글을 정말 지우시겠습니까? 삭제 복구가 불가능합니다.')) {
         await dbService.deleteDocument('posts', pId);
         showToast("게시물이 강제 철회되었습니다.", "success");
         renderBoardPanel(panel, classId);
@@ -834,7 +873,7 @@ export async function renderBoardPanel(panel, classId) {
   panel.querySelectorAll('.delete-comment-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const cId = btn.getAttribute('data-comment-id');
-      if (confirm('댓글을 삭제하시겠습니까?')) {
+      if (await showConfirm('댓글을 삭제하시겠습니까?')) {
         await dbService.deleteDocument('comments', cId);
         showToast("댓글이 소거되었습니다.", "success");
         renderBoardPanel(panel, classId);
@@ -927,7 +966,7 @@ async function renderStudyPanel(panel, classId) {
   panel.querySelectorAll('.delete-study-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const logId = btn.getAttribute('data-id');
-      if (confirm('이 공부 기록을 정말 영구 삭제 처리하시겠습니까?')) {
+      if (await showConfirm('이 공부 기록을 정말 영구 삭제 처리하시겠습니까?')) {
         await dbService.deleteDocument('studyLogs', logId);
         showToast("공부 기록이 정상 삭제되었습니다.", "success");
         renderStudyPanel(panel, classId);

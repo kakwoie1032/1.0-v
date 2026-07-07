@@ -6,6 +6,21 @@ import { showToast, formatDuration, formatMinutes } from './utils.js';
 
 let activeTimerInterval = null;
 
+export function resetStudyTimer(currentUser) {
+  if (activeTimerInterval) {
+    clearInterval(activeTimerInterval);
+    activeTimerInterval = null;
+  }
+  if (currentUser) {
+    const sessionKey = `active_study_session_${currentUser.uid}`;
+    if (localStorage.getItem(sessionKey)) {
+      localStorage.removeItem(sessionKey);
+      showToast("학습 타이머가 초기화되었습니다. (다른 메뉴로 이동)", "warning");
+      dbService.updateDocument('users', currentUser.uid, { isStudying: false }).catch(console.error);
+    }
+  }
+}
+
 export async function renderStudyTracker(container, classId, currentUser) {
   const subjects = ['국어', '수학', '영어', '과학', '사회', '한국사', '기타'];
   const sessionKey = `active_study_session_${currentUser.uid}`;
@@ -78,7 +93,7 @@ export async function renderStudyTracker(container, classId, currentUser) {
             <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
               <span class="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">오늘 학습 총량</span>
               <h3 id="stat-my-today" class="text-xl font-bold text-gray-800 mt-1 font-mono">0분</h3>
-              <div class="text-[10px] text-green-500 font-bold mt-1.5">🔥 열공 모드 작동 중</div>
+              <div id="stat-my-active-status" class="text-[10px] text-slate-400 font-semibold mt-1.5">💤 휴식 중</div>
             </div>
             <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
               <span class="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">최근 주간 학습 합계</span>
@@ -182,11 +197,28 @@ export async function renderStudyTracker(container, classId, currentUser) {
     activeSubjectBadge.textContent = `🎯 ${savedSession.subject} 공부 중 🔥`;
     activeSubjectBadge.classList.remove('hidden');
 
+    const activeStatusEl = document.getElementById('stat-my-active-status');
+    if (activeStatusEl) {
+      activeStatusEl.innerHTML = '🔥 열공 모드 작동 중';
+      activeStatusEl.className = 'text-[10px] text-green-500 font-bold mt-1.5';
+    }
+
     startTickInterval(savedSession.startTimeMs);
+    
+    // Update DB to true in case it got cleared or out of sync
+    dbService.updateDocument('users', currentUser.uid, { isStudying: true }).catch(console.error);
+  } else {
+    const activeStatusEl = document.getElementById('stat-my-active-status');
+    if (activeStatusEl) {
+      activeStatusEl.innerHTML = '💤 휴식 중';
+      activeStatusEl.className = 'text-[10px] text-slate-400 font-semibold mt-1.5';
+    }
+    // Update DB to false to ensure sync
+    dbService.updateDocument('users', currentUser.uid, { isStudying: false }).catch(console.error);
   }
 
   // Start study handler
-  startBtn.addEventListener('click', () => {
+  startBtn.addEventListener('click', async () => {
     const subject = document.getElementById('study-subject').value;
     const memo = document.getElementById('study-memo').value;
     const startTimeMs = Date.now();
@@ -209,8 +241,22 @@ export async function renderStudyTracker(container, classId, currentUser) {
     activeSubjectBadge.textContent = `🎯 ${subject} 공부 중 🔥`;
     activeSubjectBadge.classList.remove('hidden');
 
+    const activeStatusEl = document.getElementById('stat-my-active-status');
+    if (activeStatusEl) {
+      activeStatusEl.innerHTML = '🔥 열공 모드 작동 중';
+      activeStatusEl.className = 'text-[10px] text-green-500 font-bold mt-1.5';
+    }
+
     startTickInterval(startTimeMs);
     showToast(`'${subject}' 공부를 시작합니다! 타이머 작동 중..`, "success");
+
+    // Update database status
+    try {
+      await dbService.updateDocument('users', currentUser.uid, { isStudying: true });
+      await loadLeaderboard('today'); // Reload list to show active status
+    } catch (err) {
+      console.error(err);
+    }
   });
 
   // Stop study handler
@@ -221,7 +267,39 @@ export async function renderStudyTracker(container, classId, currentUser) {
 
     const endTimeMs = Date.now();
     const totalSeconds = Math.floor((endTimeMs - activeSession.startTimeMs) / 1000);
-    const durationMinutes = Math.max(1, Math.round(totalSeconds / 60)); // minimum 1 minute
+
+    // Update database status to false immediately
+    try {
+      await dbService.updateDocument('users', currentUser.uid, { isStudying: false });
+    } catch (err) {
+      console.error(err);
+    }
+
+    // Minimum 5 minutes required (5 * 60 = 300 seconds)
+    if (totalSeconds < 300) {
+      localStorage.removeItem(sessionKey);
+      showToast("5분 미만으로 공부한 세션은 기록되지 않습니다. (최소 5분 이상 공부해야 기록됩니다)", "warning");
+
+      // Reset Stopwatch visual states
+      display.textContent = '00:00:00';
+      setupBox.classList.remove('hidden');
+      startBtn.classList.remove('hidden');
+      stopBtn.classList.add('hidden');
+      activeSubjectBadge.classList.add('hidden');
+
+      const activeStatusEl = document.getElementById('stat-my-active-status');
+      if (activeStatusEl) {
+        activeStatusEl.innerHTML = '💤 휴식 중';
+        activeStatusEl.className = 'text-[10px] text-slate-400 font-semibold mt-1.5';
+      }
+
+      // Refresh data
+      await loadMyStats();
+      await loadLeaderboard('today');
+      return;
+    }
+
+    const durationMinutes = Math.floor(totalSeconds / 60);
 
     try {
       await dbService.addDocument('studyLogs', {
@@ -245,6 +323,12 @@ export async function renderStudyTracker(container, classId, currentUser) {
       stopBtn.classList.add('hidden');
       activeSubjectBadge.classList.add('hidden');
 
+      const activeStatusEl = document.getElementById('stat-my-active-status');
+      if (activeStatusEl) {
+        activeStatusEl.innerHTML = '💤 휴식 중';
+        activeStatusEl.className = 'text-[10px] text-slate-400 font-semibold mt-1.5';
+      }
+
       // Refresh data
       await loadMyStats();
       await loadLeaderboard('today');
@@ -261,7 +345,7 @@ export async function renderStudyTracker(container, classId, currentUser) {
     const allLogs = await dbService.getCollectionWithFilter('studyLogs', 'classId', classId);
     
     // Group and sum minutes
-    const summary = {}; // uid -> { name, minutes }
+    const summary = {}; // uid -> { name, minutes, isStudying }
 
     const todayStr = new Date().toISOString().split('T')[0];
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -280,7 +364,7 @@ export async function renderStudyTracker(container, classId, currentUser) {
       if (isEligible) {
         const uid = log.studentUid;
         if (!summary[uid]) {
-          summary[uid] = { name: log.studentName, minutes: 0 };
+          summary[uid] = { name: log.studentName, minutes: 0, isStudying: false };
         }
         summary[uid].minutes += log.durationMinutes || 0;
       }
@@ -291,7 +375,9 @@ export async function renderStudyTracker(container, classId, currentUser) {
     const classStudents = allUsers.filter(u => u.role === 'student' && `${u.grade}-${u.classNumber}` === classId);
     classStudents.forEach(s => {
       if (!summary[s.uid]) {
-        summary[s.uid] = { name: s.name, minutes: 0 };
+        summary[s.uid] = { name: s.name, minutes: 0, isStudying: s.isStudying || false };
+      } else {
+        summary[s.uid].isStudying = s.isStudying || false;
       }
     });
 
@@ -314,7 +400,7 @@ export async function renderStudyTracker(container, classId, currentUser) {
           </div>
           <div class="text-xs font-bold text-gray-700 font-mono flex items-center gap-2">
             <span>${formatMinutes(entry.minutes)}</span>
-            ${entry.minutes > 0 ? '<span class="text-[9px] bg-red-50 text-red-500 border border-red-100 px-1 py-0.5 rounded-md animate-pulse">공부 중</span>' : ''}
+            ${entry.isStudying ? '<span class="text-[9px] bg-red-50 text-red-500 border border-red-100 px-1 py-0.5 rounded-md animate-pulse">공부 중</span>' : ''}
           </div>
         </div>
       `;

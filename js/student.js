@@ -2,10 +2,10 @@
  * Student & Secretary Dashboard Controller
  */
 import { dbService } from './firebase.js';
-import { showToast, formatDate, getKoreanDayOfWeek, calculateDDay, generateId } from './utils.js';
+import { showToast, formatDate, getKoreanDayOfWeek, calculateDDay, generateId, showConfirm } from './utils.js';
 import { renderClassBoard } from './board.js';
-import { renderStudyTracker } from './study.js';
-import { renderStudentsPanel, renderRolesPanel, renderBoardPanel } from './teacher.js';
+import { renderStudyTracker, resetStudyTimer } from './study.js';
+import { renderStudentsPanel, renderRolesPanel, renderBoardPanel, renderTimetablePanel } from './teacher.js';
 
 export async function renderStudentDashboard(container, currentUser) {
   const grade = currentUser.grade;
@@ -45,7 +45,10 @@ export async function renderStudentDashboard(container, currentUser) {
           🏠 학급 종합 판넬
         </button>
         <button class="student-tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs transition-all border flex items-center gap-2 cursor-pointer bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300" data-tab="study">
-          ⏱️ 열품타 학습 타이머
+          ⏱️ 학습 타이머
+        </button>
+        <button class="student-tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs transition-all border flex items-center gap-2 cursor-pointer bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300" data-tab="personal-timetable">
+          📅 개인 시간표
         </button>
         <button class="student-tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs transition-all border flex items-center gap-2 cursor-pointer bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300" data-tab="board">
           💬 학급 소통 게시판
@@ -87,13 +90,18 @@ export async function renderStudentDashboard(container, currentUser) {
   });
 
   async function switchTab(tabName) {
+    if (tabName !== 'study') {
+      resetStudyTimer(currentUser);
+    }
     const panel = document.getElementById('student-tab-panel');
     panel.innerHTML = `<div class="flex justify-center items-center py-20"><svg class="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>`;
 
     if (tabName === 'home') {
-      await renderHomePanel(panel, classId, grade, classNumber);
+      await renderHomePanel(panel, classId, grade, classNumber, currentUser);
     } else if (tabName === 'study') {
       await renderStudyTracker(panel, classId, currentUser);
+    } else if (tabName === 'personal-timetable') {
+      await renderPersonalTimetable(panel, currentUser, classId);
     } else if (tabName === 'board') {
       await renderClassBoard(panel, classId, currentUser);
     } else if (tabName === 'secretary') {
@@ -106,7 +114,7 @@ export async function renderStudentDashboard(container, currentUser) {
 }
 
 // PANEL 1: Dynamic Classroom Home Overview
-async function renderHomePanel(panel, classId, grade, classNumber) {
+async function renderHomePanel(panel, classId, grade, classNumber, currentUser) {
   const todayStr = formatDate();
   const dayOfWeekEn = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(); // e.g. "monday"
 
@@ -117,6 +125,15 @@ async function renderHomePanel(panel, classId, grade, classNumber) {
   // Fetch timetable
   const timetableDocs = await dbService.getCollectionWithFilter('timetables', 'classId', classId);
   const classTimetable = timetableDocs.length > 0 ? timetableDocs[0] : null;
+
+  // Fetch personal timetable if exists
+  let personalTimetable = null;
+  if (currentUser) {
+    const pTimetables = await dbService.getCollectionWithFilter('personalTimetables', 'studentUid', currentUser.uid);
+    personalTimetable = pTimetables.length > 0 ? pTimetables[0] : null;
+  }
+  const isUsingPersonal = personalTimetable !== null;
+  const displayedTimetable = isUsingPersonal ? personalTimetable : classTimetable;
 
   // Fetch D-Days
   const ddays = await dbService.getCollectionWithFilter('ddays', 'classId', classId);
@@ -150,7 +167,7 @@ async function renderHomePanel(panel, classId, grade, classNumber) {
               : '<span class="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2.5 py-1 border border-emerald-100 rounded-lg shadow-xs">우리반 공지</span>';
             
             return `
-              <div class="p-4.5 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col gap-2 transition-all hover:bg-white hover:border-slate-300 hover:shadow-md">
+              <div class="notice-card-trigger cursor-pointer p-4.5 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col gap-2 transition-all hover:bg-white hover:border-slate-300 hover:shadow-md" data-notice-id="${n.id}">
                 <div class="flex items-center justify-between flex-wrap gap-2">
                   <div class="flex items-center gap-1.5 flex-wrap">
                     ${badge}
@@ -159,8 +176,9 @@ async function renderHomePanel(panel, classId, grade, classNumber) {
                   </div>
                   <span class="text-[9px] text-slate-400 font-bold font-mono bg-slate-100 px-2 py-0.5 rounded-md">${n.createdByName || '작성자'} | ${n.createdAt ? n.createdAt.slice(0, 10) : ''}</span>
                 </div>
-                <p class="text-xs text-slate-600 whitespace-pre-line leading-relaxed mt-1 font-medium">${n.content}</p>
+                <p class="text-xs text-slate-600 whitespace-pre-line leading-relaxed mt-1 font-medium truncate max-w-full">${n.content.length > 100 ? n.content.slice(0, 100) + '...' : n.content}</p>
                 ${n.imageUrl ? `<img src="${n.imageUrl}" referrerPolicy="no-referrer" class="w-full max-h-48 object-cover rounded-2xl mt-2 border border-slate-100 shadow-sm" />` : ''}
+                <div class="text-[10px] text-indigo-600 font-black mt-1 text-right">자세히 보기 & 댓글 달기 ➔</div>
               </div>
             `;
           }).join('')}
@@ -210,7 +228,8 @@ async function renderHomePanel(panel, classId, grade, classNumber) {
       <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4 lg:col-span-6 md:col-span-1 hover:shadow-md transition-all duration-300">
         <div class="flex items-center justify-between border-b border-slate-100 pb-3">
           <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-            📅 우리 학급 주간 시간표
+            ${isUsingPersonal ? '📅 나의 개인 주간 시간표' : '📅 우리 학급 주간 시간표'}
+            ${isUsingPersonal ? '<span class="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-lg border border-blue-100 shadow-xs">개인맞춤</span>' : ''}
           </h2>
           <span class="text-xs text-blue-600 font-extrabold bg-blue-50 border border-blue-100 px-3 py-1 rounded-xl shadow-xs">오늘: ${getKoreanDayOfWeek(todayStr)}</span>
         </div>
@@ -219,7 +238,7 @@ async function renderHomePanel(panel, classId, grade, classNumber) {
           ${['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map(dayKey => {
             const isToday = dayOfWeekEn.includes(dayKey);
             const dayName = { monday: '월', tuesday: '화', wednesday: '수', thursday: '목', friday: '금' }[dayKey];
-            const list = classTimetable ? classTimetable[dayKey] : Array(7).fill('');
+            const list = displayedTimetable ? displayedTimetable[dayKey] : Array(7).fill('');
 
             return `
               <div class="rounded-2xl border p-2.5 flex flex-col items-center gap-2 transition-all ${isToday ? 'bg-blue-50/50 border-blue-200 shadow-sm ring-1 ring-blue-100' : 'bg-white border-slate-100'}" style="min-height: 240px;">
@@ -265,6 +284,20 @@ async function renderHomePanel(panel, classId, grade, classNumber) {
 
     </div>
   `;
+
+  // Bind Notice Clicking
+  panel.querySelectorAll('.notice-card-trigger').forEach(card => {
+    card.addEventListener('click', async () => {
+      const noticeId = card.getAttribute('data-notice-id');
+      const notice = mergedNotices.find(n => n.id === noticeId);
+      if (notice) {
+        const { renderPostDetail } = await import('./board.js');
+        await renderPostDetail(panel, notice, currentUser, classId, () => {
+          renderHomePanel(panel, classId, grade, classNumber, currentUser);
+        });
+      }
+    });
+  });
 }
 
 // PANEL 2: Secretary Administrative Dashboard Room
@@ -398,7 +431,7 @@ async function renderSecNoticePanel(subPanel, classId, grade, classNumber, refre
   subPanel.querySelectorAll('.delete-sec-dday').forEach(btn => {
     btn.addEventListener('click', async () => {
       const dId = btn.getAttribute('data-id');
-      if (confirm('이 디데이 일정을 삭제하시겠습니까?')) {
+      if (await showConfirm('이 디데이 일정을 삭제하시겠습니까?')) {
         await dbService.deleteDocument('ddays', dId);
         showToast("디데이가 정상 소거되었습니다.", "success");
         refreshParent();
@@ -428,6 +461,9 @@ async function renderSecretaryPanel(panel, classId, grade, classNumber) {
         </button>
         <button class="sec-sub-tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs transition-all border flex items-center gap-2 cursor-pointer bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300" data-sec-tab="board">
           🛡️ 소통방 검열
+        </button>
+        <button class="sec-sub-tab-btn px-4 py-2.5 rounded-xl font-semibold text-xs transition-all border flex items-center gap-2 cursor-pointer bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300" data-sec-tab="timetable">
+          📅 시간표 작성
         </button>
       </div>
 
@@ -459,6 +495,8 @@ async function renderSecretaryPanel(panel, classId, grade, classNumber) {
       await renderRolesPanel(subPanel, classId);
     } else if (currentTab === 'board') {
       await renderBoardPanel(subPanel, classId);
+    } else if (currentTab === 'timetable') {
+      await renderTimetablePanel(subPanel, classId);
     }
   };
 
@@ -477,3 +515,149 @@ async function renderSecretaryPanel(panel, classId, grade, classNumber) {
   // Init Notice
   await refreshTab();
 }
+
+// PANEL 5: Personal Timetable Customizer for All Students
+async function renderPersonalTimetable(panel, currentUser, classId) {
+  const pTimetables = await dbService.getCollectionWithFilter('personalTimetables', 'studentUid', currentUser.uid);
+  const hasPTimetable = pTimetables.length > 0;
+  let ptData = hasPTimetable ? pTimetables[0] : {
+    monday: Array(7).fill(''),
+    tuesday: Array(7).fill(''),
+    wednesday: Array(7).fill(''),
+    thursday: Array(7).fill(''),
+    friday: Array(7).fill('')
+  };
+
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+  const dayNames = { monday: '월요일', tuesday: '화요일', wednesday: '수요일', thursday: '목요일', friday: '금요일' };
+
+  const renderForm = () => {
+    panel.innerHTML = `
+      <div class="space-y-6 animate-fade-in">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div>
+            <h3 class="text-base font-bold text-gray-900 flex items-center gap-1.5">📅 나의 개인 맞춤형 시간표</h3>
+            <p class="text-xs text-gray-500 mt-1">방과 후 수업, 개인 보습학원, 또는 나만의 개인 학습 계획에 맞춰 1교시부터 7교시 시간표를 자유롭게 구성해 보세요.</p>
+          </div>
+          <button id="import-class-timetable-btn" class="shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-extrabold text-xs px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs">
+            📋 우리 반 기본 시간표 불러오기
+          </button>
+        </div>
+
+        <form id="personal-timetable-form" class="space-y-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-200">
+          <div class="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-5 gap-4">
+            ${days.map(dayKey => {
+              const list = ptData[dayKey] || Array(7).fill('');
+              return `
+                <div class="bg-white p-4.5 rounded-2xl border border-slate-150 shadow-sm space-y-3.5">
+                  <div class="text-xs font-black text-slate-800 text-center pb-2 border-b border-slate-100">${dayNames[dayKey]}</div>
+                  ${Array.from({ length: 7 }).map((_, idx) => {
+                    return `
+                      <div class="space-y-1">
+                        <div class="flex justify-between items-center px-1">
+                          <label class="block text-[10px] text-slate-400 font-black">${idx + 1}교시</label>
+                        </div>
+                        <input name="${dayKey}_${idx}" id="pt-input-${dayKey}-${idx}" type="text" value="${list[idx] || ''}" placeholder="예: 국어 / 독서" class="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-center font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white transition-all">
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <div class="flex flex-col sm:flex-row justify-center gap-3">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-6 py-3 rounded-xl transition-all cursor-pointer shadow-lg shadow-blue-500/15">
+              💾 개인 맞춤 시간표 저장하기
+            </button>
+            ${hasPTimetable ? `
+              <button id="delete-personal-timetable-btn" type="button" class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs px-5 py-3 rounded-xl transition-all cursor-pointer">
+                🗑️ 개인 시간표 초기화 (삭제)
+              </button>
+            ` : ''}
+          </div>
+        </form>
+      </div>
+    `;
+
+    // Bind Import Class Timetable Button
+    document.getElementById('import-class-timetable-btn').addEventListener('click', async () => {
+      const timetableDocs = await dbService.getCollectionWithFilter('timetables', 'classId', classId);
+      if (timetableDocs.length === 0) {
+        showToast("학급 주간 시간표가 아직 등록되지 않았습니다.", "error");
+        return;
+      }
+      
+      const classT = timetableDocs[0];
+      days.forEach(dayKey => {
+        const list = classT[dayKey] || Array(7).fill('');
+        for (let i = 0; i < 7; i++) {
+          const input = document.getElementById(`pt-input-${dayKey}-${i}`);
+          if (input) {
+            input.value = list[i] || '';
+          }
+        }
+      });
+      showToast("우리 반 기본 시간표를 가져왔습니다! 원하는 부분을 변경하고 하단의 저장 버튼을 눌러주세요.", "success");
+    });
+
+    // Bind Submit Handler
+    document.getElementById('personal-timetable-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+
+      // Build payload arrays
+      const payload = {};
+      days.forEach(dayKey => {
+        payload[dayKey] = [];
+        for (let i = 0; i < 7; i++) {
+          payload[dayKey].push(fd.get(`${dayKey}_${i}`) || '');
+        }
+      });
+
+      try {
+        if (hasPTimetable) {
+          await dbService.updateDocument('personalTimetables', ptData.id, {
+            ...payload,
+            updatedAt: new Date().toISOString()
+          });
+        } else {
+          const ptId = 'pt_' + generateId();
+          await dbService.setDocument('personalTimetables', ptId, {
+            id: ptId,
+            studentUid: currentUser.uid,
+            studentName: currentUser.name,
+            classId,
+            ...payload,
+            updatedAt: new Date().toISOString()
+          });
+        }
+        showToast("나만의 개인 시간표가 안전하게 저장되었습니다!", "success");
+        renderPersonalTimetable(panel, currentUser, classId);
+      } catch (err) {
+        console.error(err);
+        showToast("저장 중 오류가 발생했습니다.", "error");
+      }
+    });
+
+    // Bind Delete Handler
+    const deleteBtn = document.getElementById('delete-personal-timetable-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', async () => {
+        if (await showConfirm("개인 시간표를 삭제하고 초기화하시겠습니까? 학급 기본 보기로 돌아갑니다.")) {
+          try {
+            await dbService.deleteDocument('personalTimetables', ptData.id);
+            showToast("개인 시간표가 초기화되었습니다.", "success");
+            renderPersonalTimetable(panel, currentUser, classId);
+          } catch (err) {
+            console.error(err);
+            showToast("초기화 실패", "error");
+          }
+        }
+      });
+    }
+  };
+
+  renderForm();
+}
+

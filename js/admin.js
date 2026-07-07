@@ -2,7 +2,7 @@
  * Admin Dashboard Controller
  */
 import { dbService, authService } from './firebase.js';
-import { showToast, formatDate } from './utils.js';
+import { showToast, formatDate, showConfirm } from './utils.js';
 
 export async function renderAdminDashboard(container, currentUser) {
   container.innerHTML = `
@@ -268,7 +268,7 @@ async function renderClassesPanel(panel) {
   panel.querySelectorAll('.delete-class-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const classId = btn.getAttribute('data-id');
-      if (confirm(`정말 ${classId}반을 삭제하시겠습니까? 학급 정보가 삭제됩니다.`)) {
+      if (await showConfirm(`정말 ${classId}반을 삭제하시겠습니까? 학급 정보가 삭제됩니다.`)) {
         await dbService.deleteDocument('classes', classId);
         showToast("학급이 정상적으로 삭제되었습니다.", "success");
         renderClassesPanel(panel);
@@ -394,7 +394,7 @@ async function renderUsersPanel(panel) {
   panel.querySelectorAll('.delete-user-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const uid = btn.getAttribute('data-uid');
-      if (confirm('이 사용자를 정말 탈퇴 처리하시겠습니까? 관련 프로필 데이터가 유실될 수 있습니다.')) {
+      if (await showConfirm('이 사용자를 정말 탈퇴 처리하시겠습니까? 관련 프로필 데이터가 유실될 수 있습니다.')) {
         await dbService.deleteDocument('users', uid);
         showToast("사용자 계정이 무력화(삭제)되었습니다.", "success");
         renderUsersPanel(panel);
@@ -498,7 +498,7 @@ async function renderNoticesPanel(panel) {
   panel.querySelectorAll('.delete-notice-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const noticeId = btn.getAttribute('data-id');
-      if (confirm('이 공지사항을 정말 삭제하시겠습니까?')) {
+      if (await showConfirm('이 공지사항을 정말 삭제하시겠습니까?')) {
         await dbService.deleteDocument('notices', noticeId);
         showToast("공지사항이 정상적으로 철회되었습니다.", "success");
         renderNoticesPanel(panel);

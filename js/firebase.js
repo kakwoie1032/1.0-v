@@ -298,13 +298,23 @@ const INITIAL_SEED = {
 };
 
 // Storage Helper
-function getLocalDb() {
+export function getLocalDb() {
   let db = localStorage.getItem('class_management_mock_db');
-  if (!db) {
+  try {
+    if (!db) {
+      localStorage.setItem('class_management_mock_db', JSON.stringify(INITIAL_SEED));
+      db = localStorage.getItem('class_management_mock_db');
+    }
+    const parsed = JSON.parse(db);
+    if (!parsed || !parsed.users || parsed.users.length === 0) {
+      localStorage.setItem('class_management_mock_db', JSON.stringify(INITIAL_SEED));
+      return INITIAL_SEED;
+    }
+    return parsed;
+  } catch (e) {
     localStorage.setItem('class_management_mock_db', JSON.stringify(INITIAL_SEED));
-    db = localStorage.getItem('class_management_mock_db');
+    return INITIAL_SEED;
   }
-  return JSON.parse(db);
 }
 
 function saveLocalDb(data) {
@@ -563,6 +573,19 @@ export const authService = {
           return this.currentUser;
         }
       } catch (error) {
+        console.warn("Real Firebase login failed. Attempting Mock/Demo Mode fallback for test accounts:", error);
+        
+        // Fallback to Mock login if it's one of our default test/mock accounts
+        const db = getLocalDb();
+        const matched = db.users.find(u => u.email === email);
+        if (matched) {
+          this.currentUser = matched;
+          isRealFirebase = false; // Temporarily fall back to Mock mode for this session
+          localStorage.setItem('class_management_mock_auth_user', JSON.stringify(matched));
+          showToast("실제 Firebase 연동에 실패하여 임시 데모 계정으로 로그인되었습니다.", "warning");
+          return matched;
+        }
+
         let errorMsg = "로그인 도중 오류가 발생했습니다.";
         if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
           errorMsg = "이메일 또는 비밀번호가 올바르지 않습니다.";

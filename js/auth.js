@@ -1,7 +1,7 @@
 /**
  * Authentication Helper Functions
  */
-import { authService, dbService } from './firebase.js';
+import { authService, dbService, getLocalDb } from './firebase.js';
 import { showToast } from './utils.js';
 
 // Handle User Login
@@ -78,7 +78,7 @@ export async function loginStudentByInfo(studentIdStr, name, password) {
     
     // Find matching student
     const allUsers = await dbService.getCollection('users');
-    const matchedStudent = allUsers.find(u => {
+    let matchedStudent = allUsers.find(u => {
       if (u.role !== 'student') return false;
       const cleanDbName = u.name.replace(/\s*\(.*\)/, '').trim();
       return cleanDbName === name.trim() &&
@@ -86,6 +86,19 @@ export async function loginStudentByInfo(studentIdStr, name, password) {
         parseInt(u.classNumber) === classNumber &&
         parseInt(u.studentNumber) === studentNumber;
     });
+    
+    // Fallback to local mock db if not found in real firebase (or real firebase is empty/offline)
+    if (!matchedStudent) {
+      const mockDb = getLocalDb();
+      matchedStudent = mockDb.users.find(u => {
+        if (u.role !== 'student') return false;
+        const cleanDbName = u.name.replace(/\s*\(.*\)/, '').trim();
+        return cleanDbName === name.trim() &&
+          parseInt(u.grade) === grade &&
+          parseInt(u.classNumber) === classNumber &&
+          parseInt(u.studentNumber) === studentNumber;
+      });
+    }
     
     if (!matchedStudent) {
       throw new Error("일치하는 학생 정보를 찾을 수 없습니다. 학번과 이름을 확인해 주세요.");
@@ -104,6 +117,14 @@ export async function loginStudentByInfo(studentIdStr, name, password) {
 
 // Handle User Logout
 export async function logoutUser() {
+  const user = authService.getCurrentUser();
+  if (user) {
+    try {
+      await dbService.updateDocument('users', user.uid, { isStudying: false });
+    } catch (e) {
+      console.error("Failed to clear studying state on logout:", e);
+    }
+  }
   await authService.logout();
   // Clear any active UI dashboards and refresh to login screen
   window.location.reload();

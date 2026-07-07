@@ -5,7 +5,7 @@ import { initializeFirebase, authService, isUsingRealFirebase, saveFirebaseConfi
 import { renderAdminDashboard } from './admin.js';
 import { renderTeacherDashboard } from './teacher.js';
 import { renderStudentDashboard } from './student.js';
-import { showToast } from './utils.js';
+import { showToast, showConfirm } from './utils.js';
 import { logoutUser, loginStudentByInfo } from './auth.js';
 
 // Global DOM elements
@@ -174,8 +174,8 @@ function renderAppShell(user) {
   });
 
   // Reset Firebase config to return to Demo Mock Mode
-  document.getElementById('reset-config-btn').addEventListener('click', () => {
-    if (confirm("Firebase 설정을 초기화하고 로컬 데모 모드로 복귀하시겠습니까?")) {
+  document.getElementById('reset-config-btn').addEventListener('click', async () => {
+    if (await showConfirm("Firebase 설정을 초기화하고 로컬 데모 모드로 복귀하시겠습니까?")) {
       clearFirebaseConfig();
       showToast("설정이 지워졌습니다. 데모 모드로 전환합니다.", "success");
       setTimeout(() => {
